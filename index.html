@@ -1,0 +1,876 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>CRM 메시지 발송 흐름</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: 상단 고정 탭 + 섹션별 단일 컬럼. 프로토타입은 좌측 단계 레일 + 우측 작업 패널(모바일에서 세로로 쌓임) */
+:root{
+  padding-top:env(safe-area-inset-top,0px);
+  --bg:#F2F4F7; --surface:#FFFFFF; --sunken:#E9ECF2; --ink:#141A24; --muted:#5A6373; --line:#D9DEE7;
+  --accent:#2B47CF; --accent-ink:#FFFFFF; --accent-soft:#E5EAFB;
+  --block:#B8322B; --block-soft:#FBE8E6; --warn:#9A5B00; --warn-soft:#FBF0DC; --ok:#1E7448; --ok-soft:#E1F2E8;
+  --sheet:#FFFFFF; --sheet-line:#D9DEE7;
+  --asis:#B8322B; --tobe:#2B47CF;
+  --f-display:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  --f-body:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  --f-num:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#0E1218; --surface:#161B24; --sunken:#1D2330; --ink:#E6E9EF; --muted:#9AA3B3; --line:#2A3241;
+  --accent:#8CA0FF; --accent-ink:#0E1218; --accent-soft:#1D2544;
+  --block:#FF8E85; --block-soft:#3A1D1B; --warn:#F0B257; --warn-soft:#382A12; --ok:#6CD49B; --ok-soft:#14301F;
+  --asis:#FF8E85; --tobe:#8CA0FF; color-scheme:dark; } }
+:root[data-theme="dark"]{
+  --bg:#0E1218; --surface:#161B24; --sunken:#1D2330; --ink:#E6E9EF; --muted:#9AA3B3; --line:#2A3241;
+  --accent:#8CA0FF; --accent-ink:#0E1218; --accent-soft:#1D2544;
+  --block:#FF8E85; --block-soft:#3A1D1B; --warn:#F0B257; --warn-soft:#382A12; --ok:#6CD49B; --ok-soft:#14301F;
+  --asis:#FF8E85; --tobe:#8CA0FF; color-scheme:dark; }
+
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.65;word-break:keep-all;overflow-wrap:break-word}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--surface)}
+h1,h2,h3,h4{font-family:var(--f-display);text-wrap:balance;margin:0;line-height:1.3}
+p{margin:0}
+.num{font-family:var(--f-num);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+a{color:var(--accent)}
+
+/* top bar */
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--surface);border-bottom:1px solid var(--line)}
+.top-in{max-width:1120px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:12px 0;display:flex;flex-direction:column;gap:8px}
+.brandline{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.brandline h1{font-size:17px;font-weight:700}
+.brandline span{font-size:13px;color:var(--muted)}
+.tabs{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tabs a{flex:none;text-decoration:none;color:var(--muted);font-size:14px;font-weight:500;padding:8px 12px 10px;border-bottom:2px solid transparent}
+.tabs a[aria-current="page"]{color:var(--ink);border-bottom-color:var(--accent)}
+
+main{max-width:1120px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:28px 64px}
+section.view{display:flex;flex-direction:column;gap:28px}
+.lede{display:flex;flex-direction:column;gap:10px;max-width:68ch}
+.eyebrow{font-size:12px;font-weight:600;letter-spacing:.08em;color:var(--accent)}
+.lede h2{font-size:clamp(24px,3.4vw,34px);font-weight:700;letter-spacing:-.01em}
+.lede p{color:var(--muted)}
+.block{display:flex;flex-direction:column;gap:14px}
+.block>h3{font-size:18px;font-weight:600}
+.block>p.sub{color:var(--muted);max-width:68ch;font-size:14px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:20px}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:16px}
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:16px}
+.grid2>*,.grid3>*{min-width:0}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14px;min-width:560px}
+th,td{text-align:left;padding:11px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-weight:600;color:var(--muted);font-size:13px;background:var(--sunken)}
+tr:last-child td{border-bottom:0}
+td.r,th.r{text-align:right}
+.pill{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px;white-space:nowrap}
+.p-block{background:var(--block-soft);color:var(--block)}
+.p-warn{background:var(--warn-soft);color:var(--warn)}
+.p-ok{background:var(--ok-soft);color:var(--ok)}
+.p-info{background:var(--accent-soft);color:var(--accent)}
+.note{font-size:13px;color:var(--muted)}
+.statement{font-family:var(--f-display);font-size:clamp(20px,2.6vw,26px);font-weight:700;letter-spacing:-.01em;border-left:3px solid var(--accent);padding-left:16px}
+
+/* journey chart */
+.chart svg{width:100%;height:auto;display:block}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+.legend i{display:inline-block;width:18px;height:3px;border-radius:2px;vertical-align:middle;margin-right:6px}
+
+/* flowchart sheet */
+.sheet{background:var(--sheet);border:1px solid var(--sheet-line);border-radius:10px;padding:16px;overflow-x:auto;color:#141A24}
+.sheet pre.mermaid{margin:0;min-width:640px;background:transparent}
+.key{display:flex;gap:10px;flex-wrap:wrap}
+
+/* decisions */
+.dcard{display:flex;flex-direction:column;gap:8px}
+.dcard h4{font-size:16px;font-weight:600}
+.dcard .why{font-size:14px}
+.dcard .no{font-size:13px;color:var(--muted);border-top:1px dashed var(--line);padding-top:8px}
+.dcard .no b{color:var(--block);font-weight:600}
+
+/* prototype */
+.proto{display:grid;grid-template-columns:220px minmax(0,1fr);gap:0;background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.rail{background:var(--sunken);border-right:1px solid var(--line);padding:18px 12px;display:flex;flex-direction:column;gap:4px}
+.rail .shop{font-size:12px;color:var(--muted);padding:0 8px 10px}
+.rail .shop b{display:block;color:var(--ink);font-size:14px}
+.stepbtn{display:flex;align-items:center;gap:10px;width:100%;text-align:left;border:0;background:none;padding:8px;border-radius:8px;font-size:14px;color:var(--muted)}
+.stepbtn .dot{flex:none;width:22px;height:22px;border-radius:50%;border:1.5px solid var(--line);display:grid;place-items:center;font-size:11px;font-family:var(--f-num);background:var(--surface)}
+.stepbtn[aria-current="step"]{background:var(--surface);color:var(--ink);font-weight:600}
+.stepbtn[aria-current="step"] .dot{border-color:var(--accent);color:var(--accent)}
+.stepbtn.done .dot{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.stepbtn:disabled{cursor:default;opacity:.55}
+.work{padding:24px;display:flex;flex-direction:column;gap:20px;min-width:0}
+.work-head{display:flex;flex-direction:column;gap:4px}
+.work-head h3{font-size:20px;font-weight:700}
+.work-head p{color:var(--muted);font-size:14px}
+.choices{display:grid;gap:10px}
+.choice{display:flex;gap:12px;align-items:flex-start;text-align:left;width:100%;border:1.5px solid var(--line);background:var(--surface);border-radius:10px;padding:14px}
+.choice[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.choice .radio{flex:none;width:18px;height:18px;border-radius:50%;border:1.5px solid var(--muted);margin-top:3px;display:grid;place-items:center}
+.choice[aria-pressed="true"] .radio{border-color:var(--accent)}
+.choice[aria-pressed="true"] .radio::after{content:"";width:8px;height:8px;border-radius:50%;background:var(--accent)}
+.choice .ct{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+.choice .ct b{font-weight:600}
+.choice .ct span{font-size:13px;color:var(--muted)}
+.choice .side{flex:none;text-align:right;font-size:13px;color:var(--muted)}
+.choice .side b{display:block;color:var(--ink);font-size:15px}
+.actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:space-between;align-items:center;border-top:1px solid var(--line);padding-top:16px}
+.btn{border:1.5px solid var(--line);background:var(--surface);border-radius:8px;padding:9px 16px;font-weight:600;font-size:14px}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.primary:disabled{opacity:.4;cursor:not-allowed}
+.btn.small{padding:6px 12px;font-size:13px}
+.btn.danger{color:var(--block);border-color:var(--block)}
+.kv{margin:0;display:grid;grid-template-columns:auto 1fr;gap:6px 16px;font-size:14px}
+.kv dt{color:var(--muted)} .kv dd{margin:0}
+.timerow{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.timerow label{font-size:13px;font-weight:600}
+.timerow input{font:inherit;color:var(--ink);background:var(--surface);border:1.5px solid var(--line);border-radius:8px;padding:6px 8px}
+.infobox{border-radius:10px;padding:12px 14px;font-size:13.5px;background:var(--sunken)}
+.infobox.warn{background:var(--warn-soft)}
+.infobox.ok{background:var(--ok-soft)}
+
+/* compose */
+.compose{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,300px);gap:20px}
+.field{display:flex;flex-direction:column;gap:6px}
+.field label{font-size:13px;font-weight:600}
+.editor{border:1.5px solid var(--line);border-radius:10px;padding:12px;font-size:14px;line-height:1.7;background:var(--surface);white-space:pre-wrap}
+.var{background:var(--accent-soft);color:var(--accent);border-radius:4px;padding:0 4px;font-weight:600}
+.seg{display:flex;flex-wrap:wrap;gap:6px}
+.seg button{border:1.5px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 12px;font-size:13px}
+.seg button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft);color:var(--accent);font-weight:600}
+
+/* phone preview */
+.phone{background:var(--sunken);border-radius:18px;padding:14px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.phone-top{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--muted)}
+.bubble{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px;font-size:13.5px;line-height:1.6;display:flex;flex-direction:column;gap:8px}
+.bubble .adtag{font-size:12px;color:var(--muted)}
+.bubble .miss{background:var(--block-soft);color:var(--block);border-radius:4px;padding:0 3px;font-weight:600}
+.prods{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.prod{border:1px solid var(--line);border-radius:8px;overflow:hidden;font-size:11.5px;line-height:1.35}
+.prod .img{aspect-ratio:1;max-width:100%;background:var(--sunken);display:grid;place-items:center;color:var(--muted);font-size:10px}
+.prod .img svg{width:60%;height:60%}
+.prod p{padding:5px 6px}
+.optout{font-size:11.5px;color:var(--muted);border-top:1px solid var(--line);padding-top:6px}
+.who{display:flex;gap:6px;flex-wrap:wrap}
+
+/* check */
+.checksum{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.chk{display:flex;flex-direction:column;gap:10px}
+.chk-group{display:flex;flex-direction:column;gap:8px}
+.chk-group h4{font-size:13px;font-weight:600;color:var(--muted);display:flex;gap:8px;align-items:center}
+.item{display:grid;grid-template-columns:4px minmax(0,1fr);border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--surface)}
+.item .stripe{background:var(--line)}
+.item.lv-block .stripe{background:var(--block)} .item.lv-warn .stripe{background:var(--warn)} .item.lv-info .stripe{background:var(--accent)}
+.item.resolved .stripe{background:var(--ok)}
+.item .body{padding:12px 14px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.item .t{font-weight:600;font-size:14.5px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.item .d{font-size:13.5px;color:var(--muted)}
+.item .fix{display:flex;gap:8px;flex-wrap:wrap}
+.item.resolved .t::after{content:"해결됨";font-size:12px;font-weight:600;color:var(--ok);background:var(--ok-soft);padding:1px 8px;border-radius:999px}
+
+/* queue */
+.queue{display:flex;flex-direction:column;gap:14px;align-items:flex-start}
+.clock{font-family:var(--f-num);font-size:44px;font-variant-numeric:tabular-nums;line-height:1}
+.bar{height:6px;width:100%;max-width:420px;background:var(--sunken);border-radius:3px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--accent);transition:width .5s linear}
+
+/* results */
+.hero-num{display:flex;flex-direction:column;gap:4px}
+.hero-num .lab{font-size:13px;color:var(--muted);font-weight:600}
+.hero-num .big{font-family:var(--f-num);font-size:clamp(34px,5vw,46px);line-height:1.1;font-variant-numeric:tabular-nums}
+.hero-num .exp{font-size:13px;color:var(--muted)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr));gap:12px}
+.stat{border:1px solid var(--line);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.stat .lab{font-size:12px;color:var(--muted)}
+.stat .v{font-family:var(--f-num);font-size:20px;font-variant-numeric:tabular-nums}
+.stat .s{font-size:12px;color:var(--muted)}
+.funnel{display:flex;flex-direction:column;gap:8px}
+.frow{display:grid;grid-template-columns:72px minmax(0,1fr) 92px;gap:10px;align-items:center;font-size:13px}
+.ftrack{height:14px;background:var(--sunken);border-radius:3px;overflow:hidden;display:flex}
+.ftrack i{display:block;height:100%;background:var(--accent)}
+.ftrack i.alt{background:var(--warn)}
+.frow .num{text-align:right}
+.better{color:var(--ok);font-weight:600}
+.worse{color:var(--block);font-weight:600}
+
+@media (max-width:820px){
+  .proto{grid-template-columns:1fr}
+  .rail{border-right:0;border-bottom:1px solid var(--line);flex-direction:row;overflow-x:auto;padding:10px}
+  .rail .shop{display:none}
+  .stepbtn{flex:none;width:auto;padding:6px 10px}
+  .compose{grid-template-columns:1fr}
+  .work{padding:18px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+
+
+<header class="top">
+  <div class="top-in">
+    <div class="brandline"><h1>CRM 메시지 발송 흐름</h1><span>이커머스 CRM SaaS · 메시지 기능 · 운영형 CRM 담당자 대상</span></div>
+    <nav class="tabs" aria-label="섹션">
+      <a href="#problem" data-tab="problem">문제 정의</a>
+      <a href="#flow" data-tab="flow">플로우차트</a>
+      <a href="#prototype" data-tab="prototype">프로토타입</a>
+      <a href="#decisions" data-tab="decisions">설계 근거</a>
+      <a href="#process" data-tab="process">작업 과정</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+
+<!-- ============ 문제 정의 ============ -->
+<section class="view" id="v-problem" data-view="problem">
+  <div class="lede">
+    <div class="eyebrow">문제 정의</div>
+    <h2>CRM 담당자가 가장 불안한 순간은 발송 버튼 앞이다</h2>
+    <p>메시지는 한 번 나가면 회수할 수 없습니다. 그래서 담당자는 빨리 내보내고 싶으면서도 매번 모든 것을 직접 확인합니다. 이 설계는 그 불안을 줄이는 데서 시작합니다.</p>
+  </div>
+
+  <p class="statement">실수 없이 보내고, 결과로 확인한다.</p>
+
+  <div class="block">
+    <h3>누구를 위한 기능인가</h3>
+    <p class="sub">이커머스 브랜드를 CRM 운영 역량으로 나누면 세 그룹이 됩니다. 첫 타겟은 CRM 담당자가 1~2명인 운영형 브랜드로 정했습니다.</p>
+    <div class="tablewrap"><table>
+      <thead><tr><th>그룹</th><th>누가 쓰나</th><th>지금 하는 방식</th><th>선택</th></tr></thead>
+      <tbody>
+        <tr><td>입문형</td><td>1~3인 브랜드의 대표나 MD가 겸업</td><td>행사 때 전체 회원에게 문자 발송</td><td class="note">지불 의사와 데이터가 작아 첫 고객군으로 약함</td></tr>
+        <tr><td><b>운영형</b></td><td>CRM 담당자 1~2명</td><td>툴 여러 개로 세그먼트 캠페인을 매주 수동 반복</td><td><span class="pill p-info">첫 타겟</span></td></tr>
+        <tr><td>고도화형</td><td>CRM팀과 데이터 인력, 앱 보유</td><td>자동화와 실험을 이미 운영</td><td class="note">기존 체계에 묶여 신규 툴이 파고들 틈이 적음</td></tr>
+      </tbody>
+    </table></div>
+    <p class="note">운영형은 CRM이 막 필요해진 시점이라 도구를 바꿀 의지가 있고, 처음 만드는 팀이 파고들 틈이 가장 큽니다.</p>
+  </div>
+
+  <div class="block">
+    <h3>캠페인 한 건을 내보내는 동안의 불안</h3>
+    <p class="sub">운영형 담당자의 현재 업무 7단계와 단계별 불안 정도입니다. 인터뷰나 측정으로 얻은 값이 아니라, 공개된 사고 사례와 운영 문의를 바탕으로 세운 정성 가설입니다.</p>
+    <div class="panel chart">
+      <svg viewBox="0 0 760 300" role="img" aria-labelledby="jt jd">
+        <title id="jt">단계별 담당자 불안 곡선</title>
+        <desc id="jd">현재 방식은 발송 버튼 단계에서 불안이 가장 높고, 제안 방식은 발송 전 점검으로 그 정점을 낮춘다.</desc>
+        <g id="journey"></g>
+      </svg>
+      <div class="legend"><span><i style="background:var(--asis)"></i>현재 방식 (엑셀 추출, 툴 이동, 수동 확인)</span><span><i style="background:var(--tobe)"></i>제안 방식 (연동된 오디언스, 자동 점검, 증분 성과)</span></div>
+    </div>
+  </div>
+
+  <div class="block">
+    <h3>무엇부터 풀 것인가</h3>
+    <p class="sub">문제 여섯 가지를 고객 고통, 시장의 기존 해결 수준, 처음 만드는 팀의 구현 부담으로 평가했습니다. 다른 서비스가 이미 잘 푸는 문제는 기본으로 갖추고, 비어 있는 문제에 집중합니다.</p>
+    <div class="tablewrap"><table>
+      <thead><tr><th>문제</th><th>고통</th><th>시장 해결</th><th>처리 방식</th></tr></thead>
+      <tbody>
+        <tr><td><b>발송 사고</b> (변수 누락, 대상자 착오, 중복, 시간 위반)</td><td>높음</td><td>공개 문서 기준으로는 테스트 발송 수준. 실제 수신자 데이터로 점검하는 기능은 확인되지 않음</td><td><span class="pill p-block">집중 1</span> 발송 전 점검</td></tr>
+        <tr><td><b>성과 불명</b> ("효과가 있었나")</td><td>높음</td><td>마지막 접촉 기여나 클릭 기준 매출이 대부분</td><td><span class="pill p-warn">집중 2</span> 증분 이익 성과</td></tr>
+        <tr><td>툴 간 리스트 이동</td><td>중간</td><td>쇼핑몰 연동형 서비스가 해결</td><td><span class="pill p-ok">기본 탑재</span> 저장된 오디언스</td></tr>
+        <tr><td>반복 세팅</td><td>중간</td><td>자동 캠페인이 표준</td><td><span class="pill p-ok">기본 탑재</span> 복제·자동 발송</td></tr>
+        <tr><td>중복 수신 피로</td><td>중간</td><td>빈도 제한이 표준</td><td><span class="pill p-ok">점검에 흡수</span></td></tr>
+        <tr><td>광고 표기 누락</td><td>높음 (과태료)</td><td>자동 표기가 흔함</td><td><span class="pill p-ok">자동 처리</span></td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <div class="block">
+    <h3>직접 정한 전제와 제약</h3>
+    <div class="grid2">
+      <div class="panel"><dl class="kv">
+        <dt>팀</dt><dd>처음 CRM SaaS를 만드는 소규모 팀</dd>
+        <dt>채널</dt><dd>카카오 브랜드 메시지(광고), 알림톡(정보), 문자(대체 발송)</dd>
+        <dt>제외</dt><dd>앱 푸시, 이메일. 운영형 브랜드는 앱이 없는 자사몰이 많아 도달 비중이 작다고 가정했고, 채널마다 편집기를 만드는 부담이 큼</dd>
+      </dl></div>
+      <div class="panel"><dl class="kv">
+        <dt>오디언스</dt><dd>별도 기능에서 만든 것을 입력으로 받음. 추출 로직은 다루지 않음</dd>
+        <dt>데이터</dt><dd>쇼핑몰 호스팅(회원, 주문, 장바구니) 연동을 전제</dd>
+        <dt>성공 기준</dt><dd>캠페인 1건을 더 빨리, 사고 없이 내보내고, 툴 안에서 성과를 확인</dd>
+      </dl></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 플로우차트 ============ -->
+<section class="view" id="v-flow" data-view="flow" hidden>
+  <div class="lede">
+    <div class="eyebrow">플로우차트</div>
+    <h2>정보 안내는 자동으로, 광고는 캠페인으로</h2>
+    <p>첫 질문에서 흐름이 둘로 갈립니다. 정보 안내는 이벤트에 검수된 템플릿을 연결해 두면 해당 시점에 바로 나갑니다. 광고만 캠페인을 만들어 대상과 문안을 정하고, 발송 전 점검을 통과해야 대기열로 넘어갑니다. 대기열에서는 실제 발송 전까지 취소할 수 있습니다.</p>
+  </div>
+  <div class="key">
+    <span class="pill p-block">발송 불가: 법 위반이 확정된 항목</span>
+    <span class="pill p-warn">확인 필요: 사람이 판단할 항목</span>
+    <span class="pill p-info">참고: 자동 처리 결과와 예상치</span>
+  </div>
+  <div class="sheet">
+<pre class="mermaid">
+flowchart TD
+  S(["새 메시지"]) --> P{"광고인가요, 정보 안내인가요?"}
+  P -- "정보 안내" --> E["발송 이벤트 선택<br/>주문 완료, 배송 시작, 재입고"]
+  E --> T{"알림톡 템플릿 검수 완료?"}
+  T -- "아니오" --> TW["카카오 검수 요청<br/>승인되면 자동으로 시작"]
+  T -- "예" --> V["변수 연결 점검<br/>주문 데이터와 매칭"]
+  TW --> V
+  V --> ON["자동 발송 켜기<br/>언제든 끌 수 있음"]
+  ON --> EV["이벤트 발생 즉시 알림톡 발송"]
+  EV --> F2{"알림톡 실패?"}
+  F2 -- "예" --> SMS2["문자 대체 발송"]
+  F2 -- "아니오" --> LOG["발송 현황"]
+  SMS2 --> LOG
+  P -- "광고" --> C1["캠페인 만들기<br/>카카오 브랜드 메시지, 실패 시 문자"]
+  C1 --> A["저장된 오디언스 선택"]
+  A --> AU["자동 제외<br/>수신 동의 없음, 동의 2년 경과"]
+  AU --> W["작성<br/>문안, 개인화 변수, 추천 상품, 혜택"]
+  W --> TM["발송 시점 선택<br/>추천 시각 기본, 바로 변경 가능<br/>기준 밖이면 입력 즉시 알림"]
+  TM --> CK["발송 전 점검<br/>실제 수신자 데이터로 자동 검사"]
+  CK --> B{"발송 불가 항목이 있나요?"}
+  B -- "있음" --> BF["해결 버튼<br/>예: 허용 시간으로 변경"]
+  BF --> CK
+  B -- "없음" --> R{"확인 필요 항목이 남았나요?"}
+  R -- "있음" --> RF["항목별 해결<br/>제외, 기본값 채우기, 이대로 진행"]
+  RF --> CK
+  R -- "없음" --> SUM["요약 한 장 확인<br/>실제 수신자 3명 미리보기"]
+  SUM -.-> TST["테스트 발송<br/>등록된 내부 번호에만"]
+  SUM --> Q["발송 대기열<br/>즉시 발송도 5분 대기"]
+  Q --> X{"취소하나요?"}
+  X -- "예" --> DR["초안으로 되돌림"]
+  X -- "아니오" --> SEND["발송<br/>대조군 무작위 제외"]
+  SEND --> F{"카카오 발송 실패?"}
+  F -- "예" --> SMS["문자 대체 발송"]
+  F -- "아니오" --> RES
+  SMS --> RES["성과 확인 7일<br/>증분 이익, 대조군 비교"]
+  RES --> NX["복제해서 다음 캠페인"]
+</pre>
+  </div>
+
+  <div class="block">
+    <h3>예외 상황과 분기</h3>
+    <p class="sub">발송 과정에서 생길 수 있는 사고를 확률과 피해 크기로 평가해 흐름의 분기로 옮겼습니다. 모두 예방 가능한 운영 사고라서, 확인 단계를 늘리기보다 시스템이 먼저 걸러내도록 했습니다.</p>
+    <div class="tablewrap"><table>
+      <thead><tr><th>상황</th><th>위험도</th><th>흐름에서의 처리</th></tr></thead>
+      <tbody>
+        <tr><td>예약 시각이 카카오 발송 가능 시간(08:00~20:50) 밖</td><td><span class="pill p-block">높음</span></td><td>시각을 입력하는 즉시 알림. 점검 단계에서는 발송 불가로 막고 가능한 시간으로 바꾸는 버튼 제공</td></tr>
+        <tr><td>예약 시각이 브랜드 발송 기준 밖</td><td><span class="pill p-warn">중간</span></td><td>입력 즉시 알림. 기준 안으로 바꾸거나 이번만 예외로 보내기. 기준 시간은 담당자가 언제든 수정</td></tr>
+        <tr><td>이름 같은 개인화 변수가 비어 있음</td><td><span class="pill p-warn">높음</span></td><td>확인 필요. 해당 인원에게 기본값을 채우거나 제외</td></tr>
+        <tr><td>대상자 수가 평소와 크게 다름</td><td><span class="pill p-warn">중간</span></td><td>확인 필요. 지난 발송 평균과 비교해 보여주고 조건 확인 유도</td></tr>
+        <tr><td>오늘 이미 다른 캠페인을 받은 고객</td><td><span class="pill p-warn">중간</span></td><td>확인 필요. 기본 선택은 제외</td></tr>
+        <tr><td>쿠폰 유효기간이 발송 시점보다 이름</td><td><span class="pill p-warn">중간</span></td><td>확인 필요. 쿠폰 기간 연장 버튼</td></tr>
+        <tr><td>정보 안내 메시지에 혜택 문구가 섞임</td><td><span class="pill p-info">낮음</span></td><td>구조로 차단. 정보 안내는 카카오 검수를 통과한 템플릿만 쓰고, 혜택은 광고 캠페인에서만 넣을 수 있음</td></tr>
+        <tr><td>테스트 메시지가 실제 고객에게 감</td><td><span class="pill p-info">낮음</span></td><td>구조로 차단. 테스트는 등록된 내부 번호에만 보낼 수 있음</td></tr>
+        <tr><td>카카오 수신 실패</td><td><span class="pill p-info">낮음</span></td><td>마케팅 동의 고객에게 문자 대체 발송. 예상 비율은 참고로 표시</td></tr>
+        <tr><td>발송 직후 실수를 알아챔</td><td><span class="pill p-info">낮음</span></td><td>5분 대기열 또는 예약 시각 전까지 취소</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</section>
+
+<!-- ============ 프로토타입 ============ -->
+<section class="view" id="v-prototype" data-view="prototype" hidden>
+  <div class="lede">
+    <div class="eyebrow">프로토타입</div>
+    <h2>겨울 침구 재구매 캠페인 보내기</h2>
+    <p>가상의 생활용품 자사몰 '하루살림'의 CRM 담당자가 캠페인 한 건을 만드는 과정입니다. 모든 수치는 시연용 예시입니다. 발송 전 점검 단계에서 실제로 경고를 해결해 보세요. 첫 단계에서 '정보 안내'를 고르면 주문·배송 알림을 자동 발송으로 설정하는 흐름을 볼 수 있습니다.</p>
+  </div>
+  <div class="proto">
+    <nav class="rail" aria-label="캠페인 단계">
+      <div class="shop"><b>하루살림</b>자사몰 · CRM 담당 1명</div>
+      <div id="rail"></div>
+    </nav>
+    <div class="work" id="work" aria-live="polite"></div>
+  </div>
+</section>
+
+<!-- ============ 설계 근거 ============ -->
+<section class="view" id="v-decisions" data-view="decisions" hidden>
+  <div class="lede">
+    <div class="eyebrow">설계 근거</div>
+    <h2>주요 결정과 버린 대안</h2>
+    <p>각 결정은 운영형 담당자의 고통과 참고 서비스 조사에서 나왔습니다. 버린 대안을 함께 적어 판단 기준이 드러나게 했습니다.</p>
+  </div>
+  <div class="grid2" id="dcards"></div>
+
+  <div class="block">
+    <h3>성과 지표</h3>
+    <p class="sub">클릭 기준 매출은 메시지가 없어도 샀을 고객까지 성과로 잡습니다. 쿠폰을 쓰면 매출은 올라도 이익은 줄 수 있습니다. 그래서 대표 숫자를 대조군 대비 증분 이익으로 정했습니다.</p>
+    <div class="tablewrap"><table>
+      <thead><tr><th>구분</th><th>지표</th><th>정의</th></tr></thead>
+      <tbody>
+        <tr><td><span class="pill p-info">대표</span></td><td>증분 이익</td><td>증분 매출 × 상품 마진율 − 쿠폰 할인액 − 발송 비용</td></tr>
+        <tr><td>근거</td><td>증분 매출</td><td>(발송군 구매전환율 − 대조군 구매전환율) × 발송 인원 × 평균 주문 금액. 측정 기간 7일</td></tr>
+        <tr><td>과정</td><td>도달률, 클릭률, 구매전환율</td><td>문제가 어느 단계에서 생겼는지 찾는 용도</td></tr>
+        <tr><td>견제</td><td>수신 거부율, 채널 차단 수</td><td>발송을 늘려 성과를 올릴 때 생기는 피로를 감시</td></tr>
+        <tr><td>신뢰</td><td>차이의 95% 범위</td><td>범위가 0을 걸치면 결론을 보류하라고 표시</td></tr>
+      </tbody>
+    </table></div>
+    <p class="note">대조군은 대상 1만 명 미만이면 10%, 이상이면 5%를 무작위로 제외합니다. 수천 명 규모에서 5%만 빼면 대조군이 수백 명에 그쳐 차이를 읽기 어렵기 때문입니다.</p>
+  </div>
+
+  <div class="block">
+    <h3>제품 관점의 핵심 지표 후보</h3>
+    <div class="panel">
+      <p><b>증분 성과가 확인된 캠페인을 주 1건 이상 보내는 브랜드 수</b></p>
+      <p class="note" style="margin-top:6px">사고 없이 보내고 결과로 확인하는 반복 행동을 담습니다. 견제 지표로 발송 취소율과 점검 경고를 무시하고 진행한 비율을 함께 봅니다.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 작업 과정 ============ -->
+<section class="view" id="v-process" data-view="process" hidden>
+  <div class="lede">
+    <div class="eyebrow">작업 과정</div>
+    <h2>AI 활용과 참고 자료</h2>
+    <p>Claude(Anthropic)를 조사, 구조화, 프로토타입 구현에 사용했습니다. 방향을 가르는 결정은 지원자가 직접 내렸고, 결정과 기각한 대안은 작업 중 따로 기록했습니다.</p>
+  </div>
+
+  <div class="block">
+    <h3>단계별 역할 분담</h3>
+    <div class="tablewrap"><table>
+      <thead><tr><th>단계</th><th>AI가 한 일</th><th>지원자가 결정하거나 바꾼 것</th></tr></thead>
+      <tbody>
+        <tr><td>기능 선택</td><td>고객 세분화 3그룹과 발송 6단계 문제 분해 초안</td><td>메시지 기능 선택(문자·알림톡 발송 서비스 실무 경험 활용)</td></tr>
+        <tr><td>타겟</td><td>그룹별 고통 지점 비교</td><td>운영형 확정. 근거로 'CRM이 필요해진 시점'과 '초기 팀이 파고들 틈'을 제시</td></tr>
+        <tr><td>계획</td><td>9단계 작업 계획 초안</td><td>HTML 프로토타입으로 제출 형식 결정, 결정 기록을 켠 채로 전 과정 진행 지시</td></tr>
+        <tr><td>조사</td><td>참고 서비스 공개 문서, 정보통신망법 광고성 정보 규정, 카카오 브랜드 메시지 조건 검색·요약</td><td>규제 조항은 법령 원문 확인 대상으로 분류</td></tr>
+        <tr><td>설계</td><td>속도와 안전의 모순 정리, 우선순위 평가, 점검 3등급, 지표 체계, 예외 분기 초안</td><td>수익 관점 반영, 정보 안내와 광고의 흐름 분리, 점검과 발송 시각 설정 방식 수정. 아래 요구사항 표에 이유와 함께 정리</td></tr>
+        <tr><td>구현</td><td>HTML 프로토타입 작성, 샘플 수치 계산과 검산</td><td>최종 검토</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <div class="block">
+    <h3>지원자 요구사항</h3>
+    <p class="sub">작업 중 지원자가 직접 정하거나 고치라고 요구한 사항입니다. 이유는 지원자가 작업 중 밝힌 판단을 정리한 것입니다.</p>
+    <div class="tablewrap"><table>
+      <thead><tr><th>요구사항</th><th>이유</th><th>반영한 곳</th></tr></thead>
+      <tbody>
+        <tr><td>두 기능 중 메시지 기능을 다룬다</td><td>문자·알림톡 발송 실무 경험이 많아 근거를 세우기 쉬움</td><td>과제 범위 전체</td></tr>
+        <tr><td>첫 타겟은 CRM 담당자 1~2명의 운영형 브랜드</td><td>CRM이 막 필요해진 시점이고, 처음 만드는 팀은 이미 구축된 대형팀보다 파고들 틈이 많음</td><td>문제 정의 · 고객 그룹 표</td></tr>
+        <tr><td>제출 형식은 HTML 프로토타입</td><td>흐름을 직접 눌러보며 확인할 수 있는 형태로 제출</td><td>제출물 전체</td></tr>
+        <tr><td>성과를 매출이 아니라 이익 기준으로 본다</td><td>쿠폰 위주 캠페인은 매출을 올려도 이익을 깎을 수 있음</td><td>성과 화면의 대표 숫자를 증분 이익으로, 혜택 기본값을 '상품 추천만'으로, 지난 쿠폰 캠페인과 이익 비교</td></tr>
+        <tr><td>발송 전 점검에서 고른 해결 방법을 언제든 다시 고를 수 있어야 한다</td><td>한 번 고르면 되돌릴 수 없는 구조는 담당자의 실수를 또 하나 만듦</td><td>점검 항목마다 선택지 유지, '선택 취소' 버튼</td></tr>
+        <tr><td>정보 안내는 템플릿과 발송 이벤트만 정해 두면 그 시점에 바로 나가야 한다</td><td>주문·배송 안내를 매번 캠페인으로 만드는 것은 실제 업무 방식과 맞지 않음. 캠페인 흐름은 광고에만 자연스러움</td><td>프로토타입 정보 안내 흐름(이벤트·템플릿 → 점검·켜기), 플로우차트 분기</td></tr>
+        <tr><td>재입고 알림은 고객이 직접 신청한 경우에만 알림톡으로 보낸다</td><td>메시지 발송 실무에서 확인한 기준. 신청하지 않은 고객에게 보내는 재입고 소식은 광고</td><td>설계 근거 · 정보 안내 카드, 재입고 이벤트 설명</td></tr>
+        <tr><td>예약 시각은 추천값으로 채우되 채널 단계에서 바로 바꿀 수 있어야 한다</td><td>추천은 출발점일 뿐이고 결정은 담당자가 함</td><td>채널·시간 단계의 날짜·시각 입력, '추천 시각으로' 버튼</td></tr>
+        <tr><td>정해진 시간 규칙과 기본 예약 시각이 어긋나 보이면 안 된다. 브랜드 기준이라면 담당자가 언제든 바꿀 수 있어야 한다</td><td>화면에 적힌 허용 시간과 다른 기본 시각은 어색하고, 담당자가 바꿀 수 없는 기준은 운영을 막음</td><td>카카오 발송 가능 시간(변경 불가)과 브랜드 발송 기준(수정 가능)으로 분리</td></tr>
+        <tr><td>예약 시각이 기준을 벗어나면 정할 때 바로 알려야 한다</td><td>점검 단계까지 가서야 잘못을 알면 늦음</td><td>시각 입력 즉시 경고와 해결 버튼, 점검 단계에서 한 번 더 확인</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <div class="block">
+    <h3>참고한 서비스와 자료</h3>
+    <div class="tablewrap"><table>
+      <thead><tr><th>출처</th><th>참고한 부분</th><th>반영한 곳</th></tr></thead>
+      <tbody>
+        <tr><td><a href="https://docs.channel.io/help/ko/articles/9064c609" target="_blank" rel="noopener">채널톡 캠페인 도움말</a></td><td>매체별 광고성 하루 발송 상한, 발송 시각 제한, 목표 이벤트 기반 매출 집계, 테스트 발송이 고정 예시값을 쓰는 방식</td><td>실제 수신자 샘플 미리보기, 중복 수신 점검</td></tr>
+        <tr><td><a href="https://docs.channel.io/updates/ko/articles/%EA%B3%B5%EC%A7%80-%EB%A7%88%EC%BC%80%ED%8C%85-%EC%BA%A0%ED%8E%98%EC%9D%B8-%EB%AA%A9%ED%91%9C-%EB%8B%AC%EC%84%B1-%EC%A7%91%EA%B3%84-%EA%B8%B0%EC%A4%80-%EB%B3%80%EA%B2%BD-%EC%95%88%EB%82%B4%0A-496019e7" target="_blank" rel="noopener">채널톡 목표 달성 집계 기준 변경 공지</a></td><td>마지막 접촉 캠페인에만 성과를 주는 방식</td><td>대조군 기반 증분 측정을 택한 근거</td></tr>
+        <tr><td><a href="https://www.datarize.ai/en/message-ko" target="_blank" rel="noopener">데이터라이즈 메시지 마케팅 페이지</a></td><td>채널 구성, 문자 대체 발송, 소재 자동 최적화, 수신·미수신 고객 비교 리포트</td><td>채널 구성, 대조군 비교</td></tr>
+        <tr><td><a href="https://braze.com/docs/user_guide/messaging/messaging_fundamentals/frequency_capping" target="_blank" rel="noopener">Braze 빈도 제한 문서</a>, <a href="https://docs.notifly.tech/ko/user-guide/glossary" target="_blank" rel="noopener">노티플라이 용어집</a></td><td>빈도 제한, 방해 금지 시간, 전환 이벤트가 표준 기능이라는 점</td><td>이 기능들을 차별점이 아닌 기본 탑재로 분류</td></tr>
+        <tr><td><a href="https://blog.bizgo.io/howto/bulk-sms-mistake-prevention-checklist/" target="_blank" rel="noopener">비즈고 대량 발송 사고 체크리스트</a></td><td>오발송 다섯 유형과 사례</td><td>점검 항목과 예외 분기</td></tr>
+        <tr><td><a href="https://blog.bizgo.io/howto/understanding-kakao-brand-message-targeting-types/" target="_blank" rel="noopener">비즈고 브랜드 메시지 타겟팅 타입</a></td><td>발송 대상 타입, 발송 가능 시간 08:00~20:50, 비친구 발송 조건</td><td>시간 위반 차단, 채널 선택 규칙</td></tr>
+        <tr><td><a href="https://www.sendon.io/note/ad-text-message-regulations-guide" target="_blank" rel="noopener">센드온 광고 문자 규정 정리</a></td><td>정보통신망법 제50조 의무 6가지와 과태료</td><td>자동 표기, 동의 2년 경과 자동 제외</td></tr>
+        <tr><td><a href="https://www.godo.co.kr/main/blog/25/godomall-crm-devlog-01-5493" target="_blank" rel="noopener">고도몰 CRM 개발기 1편</a></td><td>셀러가 묻는 것은 설정법보다 '효과가 있었나'라는 관찰</td><td>성과 화면 우선순위</td></tr>
+      </tbody>
+    </table></div>
+    <p class="note">규제 내용은 2026년 11월에 검색한 2차 자료 기준이며, 법령 원문과 카카오 공식 정책으로 최종 확인이 필요합니다.</p>
+  </div>
+</section>
+
+</main>
+
+<script>
+(function(){
+/* ---------- 탭 라우팅 ---------- */
+const views=[...document.querySelectorAll('section.view')];
+const tabs=[...document.querySelectorAll('.tabs a')];
+function route(){
+  const h=(location.hash||'#problem').slice(1);
+  const name=views.some(v=>v.dataset.view===h)?h:'problem';
+  views.forEach(v=>v.hidden=v.dataset.view!==name);
+  tabs.forEach(t=>{ if(t.dataset.tab===name) t.setAttribute('aria-current','page'); else t.removeAttribute('aria-current'); });
+}
+window.addEventListener('hashchange',route); route();
+
+/* ---------- 불안 곡선 ---------- */
+(function(){
+  const g=document.getElementById('journey');
+  const steps=['캠페인 정하기','대상 뽑기','채널 고르기','문안 쓰기','테스트·검수','발송 버튼','성과 확인'];
+  const asis=[25,60,45,50,75,95,70], tobe=[25,25,20,40,40,35,30];
+  const L=60,R=730,T=24,B=232, x=i=>L+(R-L)*i/(steps.length-1), y=v=>B-(B-T)*v/100;
+  let s='';
+  [0,50,100].forEach(v=>{s+=`<line x1="${L}" x2="${R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)" stroke-width="1"/><text x="${L-10}" y="${y(v)+4}" text-anchor="end" font-size="11" fill="var(--muted)">${v===0?'낮음':v===100?'높음':''}</text>`;});
+  const path=a=>a.map((v,i)=>(i?'L':'M')+x(i)+' '+y(v)).join(' ');
+  s+=`<path d="${path(asis)}" fill="none" stroke="var(--asis)" stroke-width="2.5" stroke-linejoin="round"/>`;
+  s+=`<path d="${path(tobe)}" fill="none" stroke="var(--tobe)" stroke-width="2.5" stroke-linejoin="round" stroke-dasharray="7 5"/>`;
+  asis.forEach((v,i)=>{s+=`<circle cx="${x(i)}" cy="${y(v)}" r="${i===5?6:3.5}" fill="var(--asis)"/>`;});
+  tobe.forEach((v,i)=>{s+=`<circle cx="${x(i)}" cy="${y(v)}" r="3.5" fill="var(--tobe)"/>`;});
+  s+=`<text x="${x(5)}" y="${y(95)-12}" text-anchor="middle" font-size="12" font-weight="600" fill="var(--asis)">되돌릴 수 없는 순간</text>`;
+  s+=`<text x="${x(1)+6}" y="${y(60)-10}" font-size="11" fill="var(--muted)">엑셀 추출·필터</text>`;
+  s+=`<text x="${x(6)}" y="${y(70)-12}" text-anchor="middle" font-size="11" fill="var(--muted)">효과가 있었나?</text>`;
+  steps.forEach((t,i)=>{s+=`<text x="${x(i)}" y="${B+24}" text-anchor="middle" font-size="12" fill="var(--ink)">${t}</text>`;});
+  s+=`<text x="${L}" y="${B+50}" font-size="11" fill="var(--muted)">세로축: 담당자의 불안 정도 (정성 가설, 측정값 아님)</text>`;
+  g.innerHTML=s;
+})();
+
+/* ---------- 설계 근거 카드 ---------- */
+const D=[
+  ['정보 안내는 자동으로, 광고만 캠페인으로','주문·배송 안내는 매번 보내는 일이 아니라 한 번 연결해 두는 설정입니다. 이벤트에 검수된 템플릿을 연결하면 해당 시점에 바로 나갑니다. 광고만 대상, 문안, 시각을 정하는 캠페인 흐름을 거칩니다. 첫 질문 하나로 채널, 광고 표기, 발송 시간 제한도 함께 정해집니다. 재입고 알림은 고객이 직접 신청한 경우에만 정보 안내로 보내고, 신청하지 않은 고객에게 알리는 재입고 소식은 광고 캠페인으로 보냅니다.','모든 메시지를 같은 캠페인 흐름으로: 주문 안내까지 매번 대상과 시각을 정하게 되고, 규칙 판단을 담당자에게 넘김. 재입고 소식을 관심 고객 전체에 알림톡으로: 신청하지 않은 고객에게는 광고성 정보가 됨'],
+  ['이상 신호만 사람에게 보여준다','점검은 많아야 안전하고 적어야 빠릅니다. 시스템이 실제 수신자 데이터로 전부 검사하고, 문제가 있는 항목만 확인을 요구합니다. 문제가 없으면 요약 한 장으로 끝납니다.','모든 항목 수동 체크리스트: 매번 같은 확인을 반복해 속도 문제가 남음'],
+  ['점검 결과는 세 등급','발송 불가는 법 위반이 확정된 항목, 확인 필요는 사람이 판단할 항목, 참고는 자동 처리 결과입니다. 확인 필요 항목을 모두 처리해야 발송 버튼이 열립니다.','최종 확인 창 한 장: 습관적으로 넘기게 되고 무엇이 위험한지 구분해 주지 않음'],
+  ['경고마다 해결 버튼','변수 누락은 기본값 채우기나 제외, 중복 수신은 제외, 시간 위반은 허용 시간으로 변경. 경고를 띄우고 다른 화면으로 보내지 않습니다.','경고만 표시: 담당자가 원인을 찾아 여러 화면을 오가야 함'],
+  ['실제 수신자로 미리보기','고정된 예시값 대신 실제 대상자 세 명의 데이터로 메시지를 그립니다. 이름이 빈 사람의 화면을 직접 보게 됩니다.','예시값 미리보기: 변수가 비는 경우를 보여주지 못함'],
+  ['발송 직후에도 되돌릴 시간','즉시 발송도 5분 대기열을 거칩니다. 메일 서비스의 보내기 취소처럼, 실수를 알아챈 순간 멈출 수 있습니다. 5분은 가정값입니다.','소량 선발송 후 전체 발송을 기본값으로: 사고는 줄지만 발송이 늦어지고 혜택 공정성 문제가 생겨 대량 발송 옵션으로만 남김'],
+  ['발송 시각은 두 기준으로 바로 확인','카카오 브랜드 메시지 발송 가능 시간(08:00~20:50)은 정책이라 바꿀 수 없습니다. 브랜드가 정한 발송 기준 시간은 담당자가 언제든 고칠 수 있습니다. 예약 시각은 지난 캠페인에서 클릭이 몰린 시간대로 미리 채우고, 채널 단계에서 바로 바꿀 수 있으며, 기준을 벗어나면 입력하는 즉시 알립니다.','시간 규칙을 점검 단계에서만 알리기: 시각을 정한 지 한참 뒤에야 잘못을 알게 됨. 허용 시간을 고정 표시만 하기: 표시된 시간과 기본 예약 시각이 어긋나 혼란을 줌'],
+  ['테스트 발송은 구조로 분리','테스트는 등록된 내부 번호에만 보낼 수 있고 실제 대상자와 섞이지 않습니다. 확인 단계가 아니라 구조로 사고를 막습니다.','작성자·승인자 2인 승인 필수화: 1~2명 팀에서는 승인자가 없거나 병목이 됨'],
+  ['혜택 기본값은 상품 추천만','쿠폰 없이 고객별 추천 상품을 넣는 안을 첫 기본값으로 둡니다. 쿠폰을 고르면 예상 할인액과 지난 쿠폰 캠페인의 이익 결과를 함께 보여줍니다.','쿠폰을 기본값으로: 전환율은 오르지만 원래 살 고객에게도 할인이 나가 이익이 줄 수 있음'],
+];
+document.getElementById('dcards').innerHTML=D.map(d=>`<div class="panel dcard"><h4>${d[0]}</h4><p class="why">${d[1]}</p><p class="no"><b>버린 대안</b> ${d[2]}</p></div>`).join('');
+
+/* ---------- 프로토타입 ---------- */
+const AUD={
+  winter:{name:'겨울 침구 재구매 시점',desc:'작년 10~12월 침구 구매, 이후 300일 이상 미구매',n:4812,avg:1950},
+  cart:{name:'장바구니 이탈 3일 이내',desc:'장바구니 담고 3일 안에 구매하지 않음',n:1126,avg:1080},
+  vip:{name:'VIP 90일 미구매',desc:'누적 구매 상위 5%, 최근 90일 구매 없음',n:642,avg:655},
+};
+const BEN={
+  reco:{name:'상품 추천만',desc:'고객별 추천 상품 3개, 할인 없음',conv:.056},
+  coupon:{name:'쿠폰 10%',desc:'7일 사용 가능, 1회',conv:.066},
+  ship:{name:'무료배송',desc:'이번 주문 배송비 면제',conv:.06},
+};
+const AOV=52400, MARGIN=.38, CTRL_CONV=.03, UNIT=36;
+const S={step:0,max:0,purpose:'ad',ev:'order',on:{order:false,ship:true,restock:false},aud:'winter',ben:'reco',when:'reserve',
+  fix:{time:false,name:null,size:false,dup:null,coupon:false,mix:false},preview:0,queue:null,sent:false,
+  date:'2026-11-13',time:'12:30',win:{from:'09:00',to:'20:00'},editWin:false,except:false,prevTime:null};
+const KAKAO={from:'08:00',to:'20:50'}, REC={date:'2026-11-13',time:'12:30'};
+const AD_STEPS=['목적','대상','채널·시간','작성','발송 전 점검','발송','성과'], INFO_STEPS=['목적','이벤트·템플릿','점검·켜기'];
+const steps=()=>S.purpose==='info'?INFO_STEPS:AD_STEPS;
+const fmt=n=>Math.round(n).toLocaleString('ko-KR');
+const won=n=>{if(Math.round(n)===0) return '0원'; const m=n/10000; return (Math.abs(m)>=100? fmt(m):m.toFixed(1).replace(/\.0$/,''))+'만 원';};
+
+function calc(){
+  const a=AUD[S.aud], n=a.n;
+  const expired=Math.round(n*.0118), unreach=Math.round(n*.2577);
+  const dup=Math.round(n*.0806), noname=Math.round(n*.0445);
+  let pool=n-expired-(S.fix.dup==='exclude'?dup:0)-(S.fix.name==='exclude'?noname:0);
+  const ctrlRate=pool<10000?.10:.05, ctrl=Math.round(pool*ctrlRate), send=pool-ctrl;
+  const conv=BEN[S.ben].conv;
+  const buyers=Math.round(send*conv), ctrlBuyers=Math.round(ctrl*CTRL_CONV);
+  const diff=conv-CTRL_CONV, se=Math.sqrt(conv*(1-conv)/send+CTRL_CONV*(1-CTRL_CONV)/ctrl);
+  const inc=Math.round(send*diff), rev=inc*AOV;
+  const couponCost=S.ben==='coupon'?buyers*AOV*.1:S.ben==='ship'?buyers*3000:0;
+  const sendCost=send*UNIT, profit=rev*MARGIN-couponCost-sendCost;
+  const reach=Math.round(send*.9932), kakao=Math.round(send*.9102), sms=reach-kakao;
+  const click=Math.round(reach*.094);
+  return {a,n,expired,unreach,dup,noname,pool,ctrlRate,ctrl,send,conv,buyers,ctrlBuyers,diff,lo:diff-1.96*se,hi:diff+1.96*se,inc,rev,couponCost,sendCost,profit,reach,kakao,sms,click,optout:Math.round(send*.0036),block:Math.max(1,Math.round(send*.0013))};
+}
+const WD=['일','월','화','수','목','금','토'];
+function dateLabel(d){const x=new Date(d+'T00:00:00'); return `${x.getMonth()+1}월 ${x.getDate()}일(${WD[x.getDay()]})`;}
+function sendTime(){ if(S.when==='now') return '지금 바로 (11월 12일(목) 15:10)'; return `${dateLabel(S.date)} ${S.time}`; }
+const inWin=(t,w)=>t>=w.from&&t<=w.to;
+function clampTime(t){ if(t<S.win.from) return S.win.from; if(t>S.win.to) return S.win.to; return t; }
+function timeState(){ if(S.when!=='reserve') return 'ok'; if(!inWin(S.time,KAKAO)) return 'kakao'; if(!inWin(S.time,S.win)&&!S.except) return 'brand'; return 'ok'; }
+function timeWarnHTML(){
+  const st=timeState();
+  if(st==='kakao') return `<div class="item lv-block"><div class="stripe"></div><div class="body"><div class="t">카카오 정책상 보낼 수 없는 시간이에요</div><div class="d">브랜드 메시지는 ${KAKAO.from}~${KAKAO.to}에만 발송됩니다. 21시 이후 광고는 야간 수신에 따로 동의한 고객에게만 보낼 수 있습니다.</div><div class="fix"><button class="btn small primary" data-tfix="clamp">${clampTime(S.time)}으로 바꾸기</button></div></div></div>`;
+  if(st==='brand') return `<div class="item lv-warn"><div class="stripe"></div><div class="body"><div class="t">브랜드 발송 기준(${S.win.from}~${S.win.to}) 밖이에요</div><div class="d">카카오 정책상으로는 보낼 수 있는 시간입니다. 브랜드가 정한 기준을 이번만 넘길지 정하세요.</div><div class="fix"><button class="btn small primary" data-tfix="clamp">${clampTime(S.time)}으로 바꾸기</button><button class="btn small" data-tfix="except">이번만 예외로 보내기</button></div></div></div>`;
+  if(S.when==='reserve'&&S.except&&!inWin(S.time,S.win)) return `<div class="infobox warn">브랜드 발송 기준 밖이지만 이번만 예외로 보냅니다. <button class="btn small" data-tfix="unexcept">예외 취소</button></div>`;
+  return S.when==='reserve'?`<div class="infobox ok">${sendTime()}에 보냅니다. 카카오 발송 가능 시간과 브랜드 발송 기준을 모두 지켰어요.</div>`:'';
+}
+
+function checks(){
+  const c=calc(), a=AUD[S.aud], list=[];
+  const ts=timeState();
+  if(ts==='kakao') list.push({lv:'block',id:'time',t:'카카오 정책상 보낼 수 없는 시간이에요',d:`예약 시각이 ${sendTime()}입니다. 브랜드 메시지는 ${KAKAO.from}~${KAKAO.to}에만 발송됩니다.`,fix:[['time',`${clampTime(S.time)}으로 바꾸기`,'primary']]});
+  else if(ts==='brand') list.push({lv:'warn',id:'time',t:`브랜드 발송 기준(${S.win.from}~${S.win.to}) 밖이에요`,d:`예약 시각이 ${sendTime()}입니다. 카카오 정책상으로는 보낼 수 있습니다.`,fix:[['time',`${clampTime(S.time)}으로 바꾸기`,'primary'],['except','이번만 예외로 보내기','']]});
+  else if(S.fix.time&&S.prevTime) list.push({lv:'block',id:'time',done:true,t:'발송 시각을 바꿨어요',d:`${S.prevTime} → ${S.time}. 선택을 취소하면 원래 시각으로 돌아갑니다.`,fix:[['time',`${S.time}으로 바꾸기`,'primary']]});
+  else if(S.when==='reserve'&&S.except&&!inWin(S.time,S.win)) list.push({lv:'warn',id:'except',done:true,t:'브랜드 발송 기준 밖이지만 이번만 예외로 보내요',d:`${sendTime()} 발송. 선택을 취소하면 다시 확인이 필요합니다.`,fix:[['except','이번만 예외로 보내기','']]});
+  const nm={lv:'warn',id:'name',t:`이름이 비어 있는 고객 ${fmt(c.noname)}명`,d:`'{이름}님' 자리에 값이 없습니다. 아래 미리보기 두 번째 고객이 이 경우입니다.`,fix:[['name:fill',"'고객'으로 채우기",'primary'],['name:exclude',`${fmt(c.noname)}명 제외`,'']]};
+  if(S.fix.name){nm.done=true; nm.d=S.fix.name==='fill'?"빈 이름은 '고객님'으로 표시됩니다.":`${fmt(c.noname)}명을 발송 대상에서 뺐습니다.`;}
+  list.push(nm);
+  const ratio=a.n/a.avg;
+  if(ratio>1.5){ const it={lv:'warn',id:'size',t:`대상자가 평소보다 ${ratio.toFixed(1)}배 많아요`,d:`이 오디언스로 보낸 지난 4번의 평균은 ${fmt(a.avg)}명인데 이번에는 ${fmt(a.n)}명입니다. 겨울 시즌 시작으로 조건에 맞는 고객이 늘었는지 확인하세요.`,fix:[['size','시즌 증가가 맞아요, 진행','primary'],['size:view','오디언스 조건 보기','']]};
+    if(S.fix.size){it.done=true; it.d=`${fmt(a.n)}명으로 진행합니다.`;} list.push(it); }
+  const dp={lv:'warn',id:'dup',t:`오늘 이미 다른 캠페인을 받은 고객 ${fmt(c.dup)}명`,d:'하루에 광고를 두 번 받으면 수신 거부와 채널 차단이 늘어납니다.',fix:[['dup:exclude',`${fmt(c.dup)}명 제외`,'primary'],['dup:keep','그래도 보내기','']]};
+  if(S.fix.dup){dp.done=true; dp.d=S.fix.dup==='exclude'?`${fmt(c.dup)}명을 이번 발송에서 뺐습니다.`:'중복 수신을 감수하고 보냅니다.';}
+  list.push(dp);
+  if(S.ben==='coupon'){const cp={lv:'warn',id:'coupon',t:'쿠폰이 발송 전에 만료돼요',d:'연결한 쿠폰의 사용 기한이 11월 12일 23:59입니다. 받은 고객이 쓸 수 없습니다.',fix:[['coupon','사용 기한을 11월 20일까지 연장','primary']]};
+    if(S.fix.coupon){cp.done=true;cp.d='쿠폰 사용 기한을 11월 20일 23:59로 연장했습니다.';} list.push(cp);}
+  const info=[];
+  info.push({lv:'info',t:`수신 동의 후 2년이 지난 고객 ${fmt(c.expired)}명은 자동으로 뺐어요`,d:'동의 재확인 안내를 받지 않은 고객입니다.'});
+  info.push({lv:'info',t:`마케팅 수신 동의가 없는 회원 ${fmt(c.unreach)}명은 오디언스 단계에서 이미 빠졌어요`,d:'이 회원들에게는 광고 메시지를 보낼 수 없습니다. 사이트 방문 시 동의를 받는 캠페인으로 도달 범위를 넓힐 수 있습니다.'});
+  if(S.purpose==='ad') info.push({lv:'info',t:'(광고) 표기, 발신자, 무료 수신 거부 문구를 자동으로 넣었어요',d:'정보통신망법 제50조 표기 의무 항목입니다.'});
+  info.push({lv:'info',t:`대조군 ${fmt(c.ctrl)}명(${c.ctrlRate*100}%)은 무작위로 받지 않아요`,d:'성과를 증분으로 계산하기 위한 비교 집단입니다.'});
+  info.push({lv:'info',t:`카카오 미수신 시 문자로 대체 발송될 예상 비율 약 9%`,d:'최근 30일 평균 기준입니다.'});
+  if(S.ben!=='reco') info.push({lv:'info',t:`예상 ${S.ben==='coupon'?'쿠폰 할인액':'배송비 부담'} 약 ${won(c.couponCost)}`,d:'원래 구매할 고객에게도 혜택이 나간다는 점을 포함한 추정입니다.'});
+  return {list,info};
+}
+function openCount(){return checks().list.filter(i=>!i.done).length;}
+
+/* message preview data */
+const PEOPLE=[
+  {n:'김*연',last:'구스 다운 이불 Q',p:['모달 겨울 커버 Q','극세사 베개 커버 2P','순면 패드 Q']},
+  {n:'',last:'마이크로 화이바 이불 SS',p:['워셔블 이불 SS','양모 패드 SS','항균 베개 솜']},
+  {n:'박*준',last:'호텔식 차렵이불 K',p:['수면 양말 3P','플란넬 커버 K','경추 베개']},
+];
+function msgHTML(i){
+  const p=PEOPLE[i]; let name;
+  if(p.n) name=p.n; else if(S.fix.name==='fill') name='고객'; else if(S.fix.name==='exclude') return '<p class="note">이 고객은 발송 대상에서 제외됐습니다.</p>';
+  else name='<span class="miss">{이름}</span>';
+  const ad=S.purpose==='ad';
+  const ben=S.ben==='coupon'?'<p>이번 주 침구 10% 쿠폰을 넣어드렸어요.</p>':S.ben==='ship'?'<p>이번 주문은 배송비 없이 보내드려요.</p>':'';
+  const icon='<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="8" width="18" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 12h18" stroke="currentColor" stroke-width="1.5"/></svg>';
+  return `<div class="bubble">
+    ${ad?'<span class="adtag">(광고) 하루살림</span>':'<span class="adtag">하루살림 안내</span>'}
+    <p>${name}님, 작년 이맘때 들이신 ${p.last}, 올겨울도 잘 쓰고 계신가요? 찬바람 불 때 같이 바꾸기 좋은 것들을 골라봤어요.</p>
+    ${ben}
+    <div class="prods">${p.p.map(x=>`<div class="prod"><div class="img">${icon}</div><p>${x}</p></div>`).join('')}</div>
+    ${ad?'<p class="optout">무료 수신 거부 080-000-0000 (예시 번호)</p>':''}
+  </div>`;
+}
+
+function rail(){
+  document.getElementById('rail').innerHTML=steps().map((t,i)=>{
+    const locked=i>S.max;
+    return `<button class="stepbtn ${i<S.max&&i!==S.step?'done':''}" ${i===S.step?'aria-current="step"':''} ${locked?'disabled':''} data-go="${i}"><span class="dot">${i<S.max&&i!==S.step?'✓':i+1}</span>${t}</button>`;
+  }).join('');
+}
+function choice(key,val,title,sub,side){return `<button class="choice" aria-pressed="${S[key]===val}" data-set="${key}:${val}"><span class="radio"></span><span class="ct"><b>${title}</b><span>${sub}</span></span>${side?`<span class="side">${side}</span>`:''}</button>`;}
+function nav(prevLabel,nextLabel,nextDisabled,extra){
+  return `<div class="actions"><div>${S.step>0?`<button class="btn" data-go="${S.step-1}">${prevLabel||'이전'}</button>`:''}</div><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">${extra||''}${nextLabel?`<button class="btn primary" data-next ${nextDisabled?'disabled':''}>${nextLabel}</button>`:''}</div></div>`;
+}
+
+function render(){
+  rail();
+  if(S.purpose==='info'&&S.step>0){renderInfo(); return;}
+  const w=document.getElementById('work'); const c=calc(); let h='';
+  if(S.step===0){
+    h=`<div class="work-head"><h3>무엇을 보내나요?</h3><p>이 답에 따라 흐름이 달라집니다. 채널, 광고 표기, 발송 가능 시간도 함께 정해집니다.</p></div>
+    <div class="choices">${choice('purpose','ad','광고·프로모션','신상품, 재구매 제안, 혜택 안내. 캠페인을 만들어 대상, 문안, 발송 시각을 정합니다. 카카오 브랜드 메시지로 보내고 실패하면 문자로 보냅니다.')}
+    ${choice('purpose','info','정보 안내','주문, 배송, 재입고 알림. 이벤트에 템플릿을 연결해 두면 해당 시점에 알림톡으로 바로 나갑니다.')}</div>${nav(null,'다음')}`;
+  }
+  if(S.step===1){
+    h=`<div class="work-head"><h3>누구에게 보내나요?</h3><p>오디언스 화면에서 저장한 대상 중 고릅니다. 수신 동의가 없는 회원은 이미 빠진 인원입니다.</p></div>
+    <div class="choices">${Object.entries(AUD).map(([k,a])=>choice('aud',k,a.name,a.desc,`<b class="num">${fmt(a.n)}명</b>지난 평균 ${fmt(a.avg)}`)).join('')}</div>${nav(null,'다음')}`;
+  }
+  if(S.step===2){
+    h=`<div class="work-head"><h3>채널과 발송 시각</h3><p>광고 메시지 기준으로 채널이 정해졌습니다.</p></div>
+    <div class="panel"><dl class="kv">
+      <dt>1차 채널</dt><dd>카카오 브랜드 메시지 (마케팅 수신 동의 고객 전체)</dd>
+      <dt>실패 시</dt><dd>문자(LMS)로 대체 발송, 마케팅 수신 동의 고객만</dd>
+      <dt>카카오 발송 가능 시간</dt><dd>${KAKAO.from}~${KAKAO.to} <span class="note">카카오 정책, 바꿀 수 없음</span></dd>
+      <dt>브랜드 발송 기준</dt><dd>${S.editWin?`<span class="timerow"><input type="time" id="win-from" value="${S.win.from}" min="${KAKAO.from}" max="${KAKAO.to}"> ~ <input type="time" id="win-to" value="${S.win.to}" min="${KAKAO.from}" max="${KAKAO.to}"><button class="btn small primary" data-win="save">저장</button></span><span class="note" style="display:block">카카오 발송 가능 시간 안에서만 정할 수 있습니다. 모든 광고 캠페인에 적용됩니다.</span>`:`${S.win.from}~${S.win.to} <button class="btn small" data-win="edit">기준 수정</button>`}</dd>
+    </dl></div>
+    <div class="choices">${choice('when','reserve','예약 발송','추천 시각이 미리 채워져 있고, 아래에서 바로 바꿀 수 있습니다')}
+    ${choice('when','now','지금 바로 보내기','발송 전 5분 동안 대기열에서 취소할 수 있습니다')}</div>
+    ${S.when==='reserve'?`<div class="panel" style="display:flex;flex-direction:column;gap:12px">
+      <div class="timerow"><label for="r-date">날짜</label><input type="date" id="r-date" value="${S.date}" min="2026-11-12"><label for="r-time">시각</label><input type="time" id="r-time" value="${S.time}" step="600">
+      ${S.date!==REC.date||S.time!==REC.time?'<button class="btn small" data-tfix="rec">추천 시각으로</button>':'<span class="pill p-info">추천</span>'}</div>
+      <p class="note">추천 근거: 이 오디언스로 보낸 지난 4번의 캠페인에서 클릭이 가장 많았던 시간대(12~13시)</p>
+      <div id="timewarn">${timeWarnHTML()}</div>
+    </div>`:''}${nav(null,'다음')}`;
+  }
+  if(S.step===3){
+    h=`<div class="work-head"><h3>메시지 작성</h3><p>오른쪽 미리보기는 실제 대상자 데이터로 그립니다.</p></div>
+    <div class="compose"><div style="display:flex;flex-direction:column;gap:16px;min-width:0">
+      <div class="field"><label>본문</label><div class="editor"><span class="var">{이름}</span>님, 작년 이맘때 들이신 <span class="var">{최근 구매 상품}</span>, 올겨울도 잘 쓰고 계신가요? 찬바람 불 때 같이 바꾸기 좋은 것들을 골라봤어요.</div></div>
+      <div class="field"><label>상품 블록</label><div class="editor" style="white-space:normal">고객별 추천 상품 3개 · 최근 구매 상품과 함께 산 상품, 재고 있는 상품만</div></div>
+      <div class="field"><label>혜택</label><div class="seg">${Object.entries(BEN).map(([k,b])=>`<button aria-pressed="${S.ben===k}" data-set="ben:${k}">${b.name}</button>`).join('')}</div>
+      <p class="note">${BEN[S.ben].desc}</p>
+      ${S.ben!=='reco'?`<div class="infobox warn">같은 유형의 10월 2일 쿠폰 10% 캠페인은 증분 매출이 618만 원이었지만, 할인액을 빼면 증분 이익은 68만 원이었습니다. 이번 예상 ${S.ben==='coupon'?'할인액':'배송비 부담'}은 약 ${won(c.couponCost)}입니다.</div>`:''}
+      </div>
+    </div>
+    <div class="phone"><div class="phone-top"><span>미리보기</span><span>${S.preview+1} / 3</span></div>${msgHTML(S.preview)}
+      <div class="who">${PEOPLE.map((p,i)=>`<button class="btn small" aria-pressed="${S.preview===i}" data-prev="${i}">${p.n||'이름 없음'}</button>`).join('')}</div></div>
+    </div>${nav(null,'점검하기')}`;
+  }
+  if(S.step===4){
+    const {list,info}=checks(); const open=list.filter(i=>!i.done);
+    const blk=open.filter(i=>i.lv==='block').length, wrn=open.filter(i=>i.lv==='warn').length;
+    const isSel=f=>{const [k,v]=f[0].split(':'); if(k==='except') return S.except; return v? S.fix[k]===v : !!S.fix[k];};
+    const fixBtn=(i,f)=>{const choice=f[0]!=='size:view', sel=i.done&&choice&&isSel(f);
+      const cls=i.done?(sel?'primary':''):f[2];
+      return `<button class="btn small ${cls}" data-fix="${f[0]}" ${choice?`aria-pressed="${sel}"`:''}>${sel?'✓ ':''}${f[1]}</button>`;};
+    const item=i=>`<div class="item lv-${i.lv} ${i.done?'resolved':''}"><div class="stripe"></div><div class="body"><div class="t">${i.t}</div><div class="d">${i.d}</div>${i.fix?`<div class="fix">${i.fix.map(f=>fixBtn(i,f)).join('')}${i.done?`<button class="btn small" data-undo="${i.id}">선택 취소</button>`:''}</div>`:''}</div></div>`;
+    h=`<div class="work-head"><h3>발송 전 점검</h3><p>실제 대상자 ${fmt(c.n)}명의 데이터로 검사했습니다. 문제가 있는 항목만 확인하면 됩니다.</p></div>
+    <div class="checksum">${blk?`<span class="pill p-block">발송 불가 ${blk}건</span>`:''}${wrn?`<span class="pill p-warn">확인 필요 ${wrn}건</span>`:''}${!open.length?'<span class="pill p-ok">모든 항목 확인 완료</span>':''}<span class="pill p-info">참고 ${info.length}건</span></div>
+    <div class="compose"><div class="chk">
+      ${list.length?`<div class="chk-group"><h4>확인할 항목</h4>${list.map(item).join('')}</div>`:''}
+      <div class="chk-group"><h4>자동 처리와 참고</h4>${info.map(item).join('')}</div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px;min-width:0">
+      <div class="phone"><div class="phone-top"><span>실제 수신자 미리보기</span><span>${S.preview+1} / 3</span></div>${msgHTML(S.preview)}
+        <div class="who">${PEOPLE.map((p,i)=>`<button class="btn small" data-prev="${i}">${p.n||'이름 없음'}</button>`).join('')}</div></div>
+      <div class="panel"><dl class="kv">
+        <dt>보낼 인원</dt><dd class="num">${fmt(c.send)}명</dd>
+        <dt>대조군</dt><dd class="num">${fmt(c.ctrl)}명</dd>
+        <dt>발송</dt><dd>${sendTime()}</dd>
+        <dt>예상 비용</dt><dd class="num">약 ${won(c.sendCost)}</dd>
+      </dl></div>
+      <button class="btn small" data-test>내부 번호로 테스트 발송</button>
+      <p class="note" id="testmsg" hidden>등록된 내부 번호 2개(담당자, 대표)로 보냈습니다. 실제 고객에게는 가지 않습니다.</p>
+    </div></div>
+    ${nav(null,open.length?`남은 항목 ${open.length}건 확인 후 발송 가능`:(S.when==='now'?'발송 대기열에 넣기':'예약 확정'),open.length>0)}`;
+  }
+  if(S.step===5){
+    const q=S.queue;
+    if(!S.sent){
+      const total=300, left=q?Math.max(0,q.left):total, mm=String(Math.floor(left/60)).padStart(1,'0'), ss=String(left%60).padStart(2,'0');
+      const reserve=S.when==='reserve';
+      h=`<div class="work-head"><h3>${reserve?'예약됐어요':'발송 대기 중'}</h3><p>${reserve?'예약 시각 전까지 언제든 취소하거나 고칠 수 있습니다.':'5분 뒤 발송이 시작됩니다. 그 전까지 취소할 수 있습니다.'}</p></div>
+      <div class="panel queue">
+        ${reserve?`<div class="clock" style="font-size:28px">${sendTime()}</div><p class="note">발송 대상 ${fmt(c.send)}명 · 대조군 ${fmt(c.ctrl)}명</p>`
+        :`<div class="clock" id="clock">${mm}:${ss}</div><div class="bar"><i id="qbar" style="width:${(1-left/total)*100}%"></i></div><p class="note">발송 대상 ${fmt(c.send)}명 · 대조군 ${fmt(c.ctrl)}명</p>`}
+        <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn danger" data-cancel>${reserve?'예약 취소':'발송 취소'}</button><button class="btn" data-skip>시연: 발송 완료로 넘기기</button></div>
+      </div>${nav('점검으로 돌아가기',null)}`;
+    } else {
+      h=`<div class="work-head"><h3>발송을 마쳤어요</h3><p>${fmt(c.send)}명에게 보냈고, 대조군 ${fmt(c.ctrl)}명은 받지 않았습니다. 성과는 7일 동안 모읍니다.</p></div>
+      <div class="infobox ok">카카오 ${fmt(c.kakao)}명 도달, 문자 대체 ${fmt(c.sms)}명, 실패 ${fmt(c.send-c.reach)}명</div>
+      ${nav(null,'7일 후 성과 보기')}`;
+    }
+  }
+  if(S.step===6){
+    const pos=c.lo>0;
+    const rows=[['보낸 인원',c.send,c.send],['도달',c.reach,c.send],['클릭',c.click,c.send],['구매',c.buyers,c.send]];
+    h=`<div class="work-head"><h3>${AUD[S.aud].name} · ${BEN[S.ben].name}</h3><p>${S.when==='now'?'11월 12일(목)':dateLabel(S.date)} 발송 · 7일 측정 · 대조군 ${c.ctrlRate*100}% 무작위 · 마진율 38% (브랜드 설정값)</p></div>
+    <div class="grid2">
+      <div class="panel hero-num"><span class="lab">증분 이익</span><span class="big ${c.profit>0?'':'worse'}">${c.profit<0?'−':''}${won(Math.abs(c.profit))}</span><span class="exp">이 메시지가 없었다면 생기지 않았을 이익입니다. 증분 매출 ${won(c.rev)} × 마진율 38% − ${S.ben==='reco'?'':(S.ben==='coupon'?'쿠폰 할인액 ':'배송비 ')+won(c.couponCost)+' − '}발송 비용 ${won(c.sendCost)}</span></div>
+      <div class="panel hero-num"><span class="lab">구매전환율</span><span class="big">${(c.conv*100).toFixed(1)}%</span><span class="exp">받지 않은 대조군 ${(CTRL_CONV*100).toFixed(1)}%보다 ${(c.diff*100).toFixed(1)}%p 높습니다. 95% 범위 ${(c.lo*100).toFixed(1)}~${(c.hi*100).toFixed(1)}%p${pos?', 0보다 커서 효과가 있었다고 볼 수 있습니다.':', 0을 걸쳐 아직 결론을 내리기 어렵습니다.'}</span></div>
+    </div>
+    <div class="panel funnel"><h4 style="font-size:14px">어디까지 갔나</h4>
+      ${rows.map(r=>`<div class="frow"><span>${r[0]}</span><div class="ftrack">${r[0]==='도달'?`<i style="width:${c.kakao/r[2]*100}%"></i><i class="alt" style="width:${c.sms/r[2]*100}%"></i>`:`<i style="width:${Math.max(r[1]/r[2]*100,.6)}%"></i>`}</div><span class="num">${fmt(r[1])}명</span></div>`).join('')}
+      <p class="note">도달 막대의 노란 부분은 문자 대체 발송입니다.</p>
+    </div>
+    <div class="stats">
+      <div class="stat"><span class="lab">증분 구매</span><span class="v">${fmt(c.inc)}명</span><span class="s">전체 구매 ${fmt(c.buyers)}명 중</span></div>
+      <div class="stat"><span class="lab">클릭률</span><span class="v">${(c.click/c.reach*100).toFixed(1)}%</span><span class="s">도달 기준</span></div>
+      <div class="stat"><span class="lab">수신 거부</span><span class="v">${fmt(c.optout)}명</span><span class="s">${(c.optout/c.send*100).toFixed(2)}%</span></div>
+      <div class="stat"><span class="lab">채널 차단</span><span class="v">${fmt(c.block)}명</span><span class="s">지난 평균 6명</span></div>
+    </div>
+    <div class="block"><h4 style="font-size:14px">같은 유형의 지난 캠페인과 비교</h4>
+    <div class="tablewrap"><table><thead><tr><th>캠페인</th><th class="r">증분 매출</th><th class="r">혜택 비용</th><th class="r">발송 비용</th><th class="r">증분 이익</th></tr></thead><tbody>
+      <tr><td>이번 · ${BEN[S.ben].name}</td><td class="r num">${won(c.rev)}</td><td class="r num">${won(c.couponCost)}</td><td class="r num">${won(c.sendCost)}</td><td class="r num ${c.profit>67.84e4?'better':''}">${won(c.profit)}</td></tr>
+      <tr><td>10월 2일 · 쿠폰 10%</td><td class="r num">618만 원</td><td class="r num">152만 원</td><td class="r num">15만 원</td><td class="r num">67.8만 원</td></tr>
+    </tbody></table></div>
+    <p class="note">쿠폰은 원래 사려던 고객에게도 할인이 나갑니다. 그래서 매출이 높아도 이익은 낮을 수 있습니다.</p></div>
+    <div class="actions"><button class="btn" data-go="0">처음부터 다시</button><button class="btn primary" data-dup>이 설정으로 복제</button></div>`;
+  }
+  w.innerHTML=h;
+}
+
+
+const EVENTS={
+  order:{name:'주문 완료',tpl:'주문 접수 안내',review:false,vol:'하루 평균 약 180건',
+    body:'<span class="var">이름</span>님, 주문이 접수됐어요.<br>주문번호 <span class="var">2026111304512</span><br><span class="var">구스 다운 이불 Q</span> 외 <span class="var">1</span>건<br>결제 금액 <span class="var">218,000</span>원',vars:4},
+  ship:{name:'배송 시작',tpl:'배송 출발 안내',review:false,vol:'하루 평균 약 165건',
+    body:'<span class="var">이름</span>님, 주문하신 상품이 출발했어요.<br><span class="var">한빛택배</span> 송장번호 <span class="var">6029 1184 3307</span>',vars:3},
+  restock:{name:'재입고 알림 신청 상품 입고',tpl:'재입고 안내',review:true,vol:'알림을 신청한 고객에게만, 입고 시 신청자 수만큼',
+    body:'<span class="var">이름</span>님, 알림을 신청하신 <span class="var">워셔블 이불 SS</span>이 다시 들어왔어요.',vars:2},
+};
+function renderInfo(){
+  const w=document.getElementById('work'), e=EVENTS[S.ev], on=S.on[S.ev]; let h='';
+  if(S.step===1){
+    h=`<div class="work-head"><h3>언제 보낼까요?</h3><p>쇼핑몰에서 이 일이 생기면 연결한 템플릿이 바로 나갑니다. 매번 대상이나 시각을 정할 필요가 없습니다.</p></div>
+    <div class="compose"><div class="choices">${Object.entries(EVENTS).map(([k,x])=>choice('ev',k,x.name,`템플릿 "${x.tpl}" · ${x.vol}`,`${x.review?'<span class="pill p-warn">검수 중</span>':'<span class="pill p-ok">검수 완료</span>'}${S.on[k]?'<br><span class="note">켜져 있음</span>':''}`)).join('')}</div>
+    <div class="phone"><div class="phone-top"><span>템플릿 미리보기</span><span>알림톡</span></div>
+      <div class="bubble"><span class="adtag">하루살림 안내</span><p>${e.body}</p></div>
+      <p class="note">파란 글자는 주문 데이터로 채워지는 자리입니다. 알림톡은 카카오 검수를 통과한 문구만 쓸 수 있어 혜택이나 광고 문구가 섞일 수 없습니다.</p></div>
+    </div>${nav(null,'다음')}`;
+  }
+  if(S.step===2){
+    const it=(lv,t,d,done)=>`<div class="item lv-${lv} ${done?'resolved':''}"><div class="stripe"></div><div class="body"><div class="t">${t}</div><div class="d">${d}</div></div></div>`;
+    h=`<div class="work-head"><h3>${e.name} 알림 켜기</h3><p>한 번만 점검하면 이후에는 이벤트가 생길 때마다 자동으로 나갑니다.</p></div>
+    <div class="compose"><div class="chk"><div class="chk-group">
+      ${e.review?it('warn','템플릿이 카카오 검수 중이에요','지금 켜두면 검수가 승인되는 즉시 자동으로 시작합니다. 반려되면 알려드립니다.',false):''}
+      ${it('info',`변수 ${e.vars}개가 모두 쇼핑몰 주문 데이터에 연결됐어요`,'이름이 비어 있는 주문은 \'고객님\'으로 표시합니다.',false)}
+      ${it('info','휴대폰 번호가 없는 주문에는 알림이 가지 않아요','최근 30일 주문 기준 약 0.4%입니다.',false)}
+      ${it('info','알림톡이 실패하면 문자로 대체 발송해요','문자 비용은 별도로 나갑니다. 최근 30일 대체 발송 비율은 약 3%입니다.',false)}
+    </div></div>
+    <div style="display:flex;flex-direction:column;gap:12px;min-width:0">
+      <div class="panel"><dl class="kv">
+        <dt>이벤트</dt><dd>${e.name}</dd><dt>템플릿</dt><dd>${e.tpl}</dd><dt>발송 시점</dt><dd>이벤트 발생 즉시</dd><dt>예상 발송량</dt><dd>${e.vol}</dd>
+      </dl></div>
+      ${on?`<div class="infobox ok">${e.review?'켜짐 · 검수가 승인되면 바로 시작합니다.':'켜짐 · 다음 '+e.name+'부터 바로 발송됩니다.'}</div><button class="btn" data-toggle>자동 발송 끄기</button>`
+        :`<button class="btn primary" data-toggle>자동 발송 켜기</button><p class="note">켠 뒤에도 언제든 끌 수 있습니다.</p>`}
+    </div></div>${nav(null,null)}`;
+  }
+  w.innerHTML=h;
+}
+function startQueue(){
+  stopQueue(); S.queue={left:300};
+  S.queue.t=setInterval(()=>{S.queue.left--; const el=document.getElementById('clock'), b=document.getElementById('qbar');
+    if(el){el.textContent=Math.floor(S.queue.left/60)+':'+String(S.queue.left%60).padStart(2,'0');}
+    if(b) b.style.width=((1-S.queue.left/300)*100)+'%';
+    if(S.queue.left<=0){stopQueue(); S.sent=true; render();}},1000);
+}
+function stopQueue(){ if(S.queue&&S.queue.t) clearInterval(S.queue.t); }
+
+document.getElementById('work').addEventListener('click',e=>{
+  const b=e.target.closest('button'); if(!b) return;
+  if(b.dataset.set){const [k,v]=b.dataset.set.split(':'); S[k]=v; if(k==='aud'){S.fix.size=false;} if(k==='when'){S.fix.time=false;S.except=false;} if(k==='purpose'){S.max=0;} render(); return;}
+  if(b.dataset.prev){S.preview=+b.dataset.prev; render(); return;}
+  if(b.dataset.undo){const k=b.dataset.undo;
+    if(k==='time'){ if(S.prevTime) S.time=S.prevTime; S.prevTime=null; S.fix.time=false; render(); return; }
+    if(k==='except'){ S.except=false; render(); return; }
+    S.fix[k]=(k==='name'||k==='dup')?null:false; render(); return;}
+  if(b.dataset.tfix){const v=b.dataset.tfix;
+    if(v==='clamp'){S.time=clampTime(S.time);} if(v==='except'){S.except=true;} if(v==='unexcept'){S.except=false;}
+    if(v==='rec'){S.date=REC.date;S.time=REC.time;S.except=false;}
+    render(); return;}
+  if(b.dataset.win){ if(b.dataset.win==='edit'){S.editWin=true; render(); return;}
+    let f=document.getElementById('win-from').value||S.win.from, t=document.getElementById('win-to').value||S.win.to;
+    if(f<KAKAO.from) f=KAKAO.from; if(t>KAKAO.to) t=KAKAO.to; if(f>=t){f=S.win.from;t=S.win.to;}
+    S.win={from:f,to:t}; S.editWin=false; S.except=false; render(); return;}
+  if(b.dataset.fix){const [k,v]=b.dataset.fix.split(':');
+    if(k==='size'&&v==='view'){alertBox('오디언스 조건: 작년 10~12월 침구 구매 · 이후 300일 이상 미구매 · 마케팅 수신 동의. 조건은 바뀌지 않았고, 300일이 지난 고객이 이번 주에 몰렸습니다.'); return;}
+    if(k==='time'){ if(!S.fix.time){S.prevTime=S.time;} S.time=clampTime(S.time); S.fix.time=true; render(); return; }
+    if(k==='except'){ S.except=true; render(); return; }
+    S.fix[k]=v||true; render(); return;}
+  if(b.hasAttribute('data-toggle')){S.on[S.ev]=!S.on[S.ev]; render(); return;}
+  if(b.hasAttribute('data-test')){const t=document.getElementById('testmsg'); if(t) t.hidden=false; return;}
+  if(b.hasAttribute('data-next')){ if(S.purpose==='ad'&&S.step===4){S.sent=false; if(S.when==='now') startQueue(); else S.queue=null;} if(S.step===5&&S.sent){} S.step=Math.min(steps().length-1,S.step+1); S.max=Math.max(S.max,S.step); render(); return;}
+  if(b.hasAttribute('data-cancel')){stopQueue(); S.queue=null; S.step=4; render(); toast('발송을 취소했습니다. 초안은 그대로 남아 있습니다.'); return;}
+  if(b.hasAttribute('data-skip')){stopQueue(); S.sent=true; render(); return;}
+  if(b.hasAttribute('data-dup')){toast('같은 설정으로 새 캠페인 초안을 만들었습니다.'); return;}
+  if(b.dataset.go!==undefined){go(+b.dataset.go);}
+});
+function onTimeEdit(e){
+  const t=e.target; if(t.id==='r-date'){S.date=t.value||S.date;} else if(t.id==='r-time'){S.time=t.value||S.time;} else return;
+  S.fix.time=false; S.prevTime=null; S.except=false;
+  const w=document.getElementById('timewarn'); if(w) w.innerHTML=timeWarnHTML();
+  const row=t.closest('.timerow'); if(row){const recBtn=row.querySelector('[data-tfix="rec"]'), pill=row.querySelector('.pill');
+    if(S.date===REC.date&&S.time===REC.time){ if(recBtn) recBtn.outerHTML='<span class="pill p-info">추천</span>'; }
+    else if(pill){ pill.outerHTML='<button class="btn small" data-tfix="rec">추천 시각으로</button>'; } }
+}
+document.getElementById('work').addEventListener('input',onTimeEdit);
+document.getElementById('work').addEventListener('change',onTimeEdit);
+document.getElementById('rail').addEventListener('click',e=>{const b=e.target.closest('[data-go]'); if(b&&!b.disabled) go(+b.dataset.go);});
+function go(i){ if(S.step===5&&i<5) stopQueue(); if(i===0&&S.step===6){Object.assign(S,{step:0,max:0,sent:false,queue:null,fix:{time:false,name:null,size:false,dup:null,coupon:false,mix:false},except:false,prevTime:null});} else S.step=i; render(); }
+function toast(msg){const w=document.getElementById('work'); const d=document.createElement('div'); d.className='infobox ok'; d.textContent=msg; w.prepend(d); setTimeout(()=>d.remove(),3500);}
+function alertBox(msg){const w=document.querySelector('.chk'); if(!w) return; const d=document.createElement('div'); d.className='infobox'; d.textContent=msg; w.prepend(d);}
+render();
+})();
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script>
+(function(){
+  var done=false;
+  function draw(){ if(done||!window.mermaid) return; var v=document.querySelector('[data-view="flow"]'); if(!v||v.hidden) return;
+    done=true; mermaid.initialize({startOnLoad:false,theme:'neutral',flowchart:{htmlLabels:true,useMaxWidth:true}}); mermaid.run({querySelector:'pre.mermaid'}); }
+  window.addEventListener('hashchange',function(){setTimeout(draw,0)}); window.addEventListener('load',draw);
+})();
+</script>
+</body>
+</html>
